@@ -1,6 +1,7 @@
 #ifndef LOAD_TILES_H
 #define LOAD_TILES_H
 
+#include <stddef.h>
 #include <windows.h>
 
 typedef struct Tiles Tiles;
@@ -22,6 +23,18 @@ void tiles_pixel_size(const Tiles *tiles, UINT *out_width, UINT *out_height);
 void tiles_draw_stretched(HDC hdc, const Tiles *tiles, int x, int y, int width, int height);
 /** Draw one tile from the spritesheet using `kTileBounds[tile_index]` in pixel space. */
 void tiles_draw_tile(HDC hdc, const Tiles *tiles, unsigned tile_index, int x, int y, int width, int height);
+
+typedef struct TilesDrawCmd {
+    unsigned tile_index;
+    int x;
+    int y;
+    int w;
+    int h;
+} TilesDrawCmd;
+
+/** Clear the DC, then draw each command with one GDI+ context (bottom to top order is caller's responsibility). */
+void tiles_draw_commands(HDC hdc, const Tiles *tiles, const TilesDrawCmd *cmds, size_t ncmds);
+
 /** Clear the DC to the tile background color and draw every entry in `kTileBounds` on a fixed grid. */
 void tiles_draw_bounds_grid(HDC hdc, const Tiles *tiles, int cols, int cell_w, int cell_h);
 

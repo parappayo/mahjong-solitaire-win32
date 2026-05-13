@@ -20,10 +20,13 @@ if errorlevel 1 exit /b 1
 clang -std=c17 -Wall -Wextra -O2 -Iinclude -c -o src\main.o src\main.c
 if errorlevel 1 exit /b 1
 
+clang -std=c17 -Wall -Wextra -O2 -Iinclude -c -o src\game.o src\game.c
+if errorlevel 1 exit /b 1
+
 clang -std=c17 -Wall -Wextra -O2 -Iinclude -c -o src\load_tiles.o src\load_tiles.c
 if errorlevel 1 exit /b 1
 
-clang -o mahjong.exe src\main.o src\load_tiles.o res\app.o -mwindows -lgdiplus -lole32 -luuid
+clang -o mahjong.exe src\main.o src\game.o src\load_tiles.o res\app.o -mwindows -lgdiplus -lole32 -luuid
 if errorlevel 1 exit /b 1
 
 echo Built mahjong.exe

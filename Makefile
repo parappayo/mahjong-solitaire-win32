@@ -7,6 +7,7 @@ LDLIBS   := -lgdiplus -lole32 -luuid
 
 TARGET   := mahjong.exe
 MAIN_O   := src/main.o
+GAME_O   := src/game.o
 TILES_O  := src/load_tiles.o
 RES_O    := res/app.o
 RC       := res/app.rc
@@ -15,10 +16,13 @@ RC       := res/app.rc
 
 all: $(TARGET)
 
-$(TARGET): $(MAIN_O) $(TILES_O) $(RES_O)
-	$(CC) -o $@ $(MAIN_O) $(TILES_O) $(RES_O) $(LDFLAGS) $(LDLIBS)
+$(TARGET): $(MAIN_O) $(GAME_O) $(TILES_O) $(RES_O)
+	$(CC) -o $@ $(MAIN_O) $(GAME_O) $(TILES_O) $(RES_O) $(LDFLAGS) $(LDLIBS)
 
-$(MAIN_O): src/main.c include/load_tiles.h
+$(MAIN_O): src/main.c include/load_tiles.h include/game.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(GAME_O): src/game.c include/game.h include/tile_bounds.h include/turtle_layout.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(TILES_O): src/load_tiles.c include/load_tiles.h include/resource.h
@@ -28,4 +32,4 @@ $(RES_O): $(RC) include/resource.h mahjong_tiles.gif
 	$(WINDRES) -I include -o $@ $<
 
 clean:
-	rm -f $(TARGET) $(MAIN_O) $(TILES_O) $(RES_O)
+	rm -f $(TARGET) $(MAIN_O) $(GAME_O) $(TILES_O) $(RES_O)

@@ -1,12 +1,7 @@
 #include <windows.h>
 
+#include "game.h"
 #include "load_tiles.h"
-#include "tile_bounds.h"
-
-/** Layout for preview: columns and destination cell size (source tiles are 24x48). */
-#define TILE_GRID_COLS 9
-#define TILE_DRAW_CELL_W 48
-#define TILE_DRAW_CELL_H 96
 
 #define TIMER_GIF_FRAME 1
 
@@ -15,6 +10,7 @@ static const char kWindowClass[] = "MahjongSolitaireWinClass";
 typedef struct {
     Tiles *tiles;
     UINT currentFrame;
+    GameState game;
 } AppState;
 
 static HINSTANCE g_hInstance;
@@ -43,6 +39,31 @@ static void App_OnTimer(HWND hwnd, AppState *s) {
     App_ScheduleNextFrame(hwnd, s);
 }
 
+static void App_DrawSelection(HWND hwnd, HDC hdc, const GameState *g) {
+    (void)hwnd;
+    if (!g || g->selected < 0) {
+        return;
+    }
+
+    int x = 0;
+    int y = 0;
+    int w = 0;
+    int h = 0;
+    game_tile_screen_rect(g->selected, &x, &y, &w, &h);
+
+    HPEN pen = CreatePen(PS_SOLID, 3, RGB(255, 220, 0));
+    if (!pen) {
+        return;
+    }
+    HPEN oldPen = (HPEN)SelectObject(hdc, pen);
+    HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+    SetBkMode(hdc, TRANSPARENT);
+    Rectangle(hdc, x, y, x + w + 1, y + h + 1);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
+}
+
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     AppState *state = (AppState *)GetWindowLongPtrA(hwnd, GWLP_USERDATA);
 
@@ -62,15 +83,15 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             return -1;
         }
 
+        game_new(&s->game);
+
         SetWindowLongPtrA(hwnd, GWLP_USERDATA, (LONG_PTR)s);
 
-        unsigned rows = (TILE_BOUNDS_COUNT + (unsigned)TILE_GRID_COLS - 1u) / (unsigned)TILE_GRID_COLS;
-        RECT rc = {
-            0,
-            0,
-            (LONG)TILE_GRID_COLS * TILE_DRAW_CELL_W,
-            (LONG)rows * TILE_DRAW_CELL_H,
-        };
+        int cw = 0;
+        int ch = 0;
+        game_board_client_size(&cw, &ch);
+
+        RECT rc = {0, 0, cw, ch};
         AdjustWindowRectEx(&rc, (DWORD)GetWindowLongPtrA(hwnd, GWL_STYLE), FALSE, (DWORD)GetWindowLongPtrA(hwnd, GWL_EXSTYLE));
         int winW = rc.right - rc.left;
         int winH = rc.bottom - rc.top;
@@ -86,6 +107,20 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         }
         return 0;
 
+    case WM_LBUTTONDOWN: {
+        if (!state) {
+            return 0;
+        }
+        int mx = (int)(short)LOWORD(lParam);
+        int my = (int)(short)HIWORD(lParam);
+        int idx = game_hit_test(&state->game, mx, my);
+        if (idx >= 0) {
+            (void)game_on_tile_click(&state->game, idx);
+            InvalidateRect(hwnd, NULL, FALSE);
+        }
+        return 0;
+    }
+
     case WM_ERASEBKGND:
         return 1;
 
@@ -93,7 +128,26 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
         if (state && state->tiles) {
-            tiles_draw_bounds_grid(hdc, state->tiles, TILE_GRID_COLS, TILE_DRAW_CELL_W, TILE_DRAW_CELL_H);
+            int order[GAME_TILE_COUNT];
+            int n = game_draw_order(&state->game, order, GAME_TILE_COUNT);
+            TilesDrawCmd cmds[GAME_TILE_COUNT];
+            int c = 0;
+            for (int i = 0; i < n; i++) {
+                int idx = order[i];
+                int x = 0;
+                int y = 0;
+                int w = 0;
+                int h = 0;
+                game_tile_screen_rect(idx, &x, &y, &w, &h);
+                cmds[c].tile_index = state->game.face[idx];
+                cmds[c].x = x;
+                cmds[c].y = y;
+                cmds[c].w = w;
+                cmds[c].h = h;
+                c++;
+            }
+            tiles_draw_commands(hdc, state->tiles, cmds, (size_t)c);
+            App_DrawSelection(hwnd, hdc, &state->game);
         }
         EndPaint(hwnd, &ps);
         return 0;

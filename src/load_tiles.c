@@ -168,6 +168,25 @@ void tiles_draw_tile(HDC hdc, const Tiles *t, unsigned tile_index, int x, int y,
     GdipDeleteGraphics(gfx);
 }
 
+void tiles_draw_commands(HDC hdc, const Tiles *t, const TilesDrawCmd *cmds, size_t ncmds) {
+    if (!hdc || !t || !t->bitmap || !cmds || ncmds == 0) {
+        return;
+    }
+
+    GpGraphics *gfx = NULL;
+    if (GdipCreateFromHDC(hdc, &gfx) != Ok) {
+        return;
+    }
+
+    GdipGraphicsClear(gfx, 0xFF404040);
+
+    for (size_t i = 0; i < ncmds; i++) {
+        tiles_draw_tile_gfx(gfx, t->bitmap, cmds[i].tile_index, cmds[i].x, cmds[i].y, cmds[i].w, cmds[i].h);
+    }
+
+    GdipDeleteGraphics(gfx);
+}
+
 void tiles_draw_bounds_grid(HDC hdc, const Tiles *t, int cols, int cell_w, int cell_h) {
     if (!hdc || !t || !t->bitmap || cols <= 0 || cell_w <= 0 || cell_h <= 0) {
         return;
