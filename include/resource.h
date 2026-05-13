@@ -1,0 +1,6 @@
+#ifndef MAHJONG_RESOURCE_H
+#define MAHJONG_RESOURCE_H
+
+#define IDR_MAHJONG_TILES_GIF 101
+
+#endif
