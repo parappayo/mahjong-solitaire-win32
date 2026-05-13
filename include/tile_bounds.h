@@ -11,9 +11,7 @@ typedef struct TileBounds {
     int h;
 } TileBounds;
 
-#define TILE_BOUNDS_COUNT (30u)
-
-static const TileBounds kTileBounds[43] = {
+static const TileBounds kTileBounds[] = {
     // row of numbers at the top
     { 24, 7, 24, 48 },
     { 48, 7, 24, 48 },
@@ -67,5 +65,7 @@ static const TileBounds kTileBounds[43] = {
     { 192, 184, 24, 48 },
     { 216, 184, 24, 48 },
 };
+
+#define TILE_BOUNDS_COUNT ((unsigned)(sizeof(kTileBounds) / sizeof((kTileBounds)[0])))
 
 #endif /* TILE_BOUNDS_H */

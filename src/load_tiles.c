@@ -11,6 +11,7 @@
 
 #include "load_tiles.h"
 #include "resource.h"
+#include "tile_bounds.h"
 
 #ifndef PropertyTagFrameDelay
 #define PropertyTagFrameDelay 0x5100
@@ -123,6 +124,68 @@ void tiles_draw_stretched(HDC hdc, const Tiles *t, int x, int y, int width, int 
     }
     GdipGraphicsClear(gfx, 0xFF404040);
     GdipDrawImageRectI(gfx, t->bitmap, x, y, width, height);
+    GdipDeleteGraphics(gfx);
+}
+
+static void tiles_draw_tile_gfx(GpGraphics *gfx, GpBitmap *bitmap, unsigned tile_index, int x, int y, int width, int height) {
+    if (!gfx || !bitmap || width <= 0 || height <= 0 || tile_index >= TILE_BOUNDS_COUNT) {
+        return;
+    }
+
+    const TileBounds *b = &kTileBounds[tile_index];
+    if (b->w <= 0 || b->h <= 0) {
+        return;
+    }
+
+    GdipDrawImageRectRectI(
+        gfx,
+        bitmap,
+        x,
+        y,
+        width,
+        height,
+        b->x,
+        b->y,
+        b->w,
+        b->h,
+        UnitPixel,
+        NULL,
+        NULL,
+        NULL);
+}
+
+void tiles_draw_tile(HDC hdc, const Tiles *t, unsigned tile_index, int x, int y, int width, int height) {
+    if (!hdc || !t || !t->bitmap) {
+        return;
+    }
+
+    GpGraphics *gfx = NULL;
+    if (GdipCreateFromHDC(hdc, &gfx) != Ok) {
+        return;
+    }
+
+    tiles_draw_tile_gfx(gfx, t->bitmap, tile_index, x, y, width, height);
+    GdipDeleteGraphics(gfx);
+}
+
+void tiles_draw_bounds_grid(HDC hdc, const Tiles *t, int cols, int cell_w, int cell_h) {
+    if (!hdc || !t || !t->bitmap || cols <= 0 || cell_w <= 0 || cell_h <= 0) {
+        return;
+    }
+
+    GpGraphics *gfx = NULL;
+    if (GdipCreateFromHDC(hdc, &gfx) != Ok) {
+        return;
+    }
+
+    GdipGraphicsClear(gfx, 0xFF404040);
+
+    for (unsigned i = 0; i < TILE_BOUNDS_COUNT; i++) {
+        int col = (int)(i % (unsigned)cols);
+        int row = (int)(i / (unsigned)cols);
+        tiles_draw_tile_gfx(gfx, t->bitmap, i, col * cell_w, row * cell_h, cell_w, cell_h);
+    }
+
     GdipDeleteGraphics(gfx);
 }
 

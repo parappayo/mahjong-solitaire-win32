@@ -1,6 +1,12 @@
 #include <windows.h>
 
 #include "load_tiles.h"
+#include "tile_bounds.h"
+
+/** Layout for preview: columns and destination cell size (source tiles are 24x48). */
+#define TILE_GRID_COLS 9
+#define TILE_DRAW_CELL_W 48
+#define TILE_DRAW_CELL_H 96
 
 #define TIMER_GIF_FRAME 1
 
@@ -58,10 +64,13 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
         SetWindowLongPtrA(hwnd, GWLP_USERDATA, (LONG_PTR)s);
 
-        UINT imgW = 0, imgH = 0;
-        tiles_pixel_size(s->tiles, &imgW, &imgH);
-
-        RECT rc = {0, 0, (LONG)imgW, (LONG)imgH};
+        unsigned rows = (TILE_BOUNDS_COUNT + (unsigned)TILE_GRID_COLS - 1u) / (unsigned)TILE_GRID_COLS;
+        RECT rc = {
+            0,
+            0,
+            (LONG)TILE_GRID_COLS * TILE_DRAW_CELL_W,
+            (LONG)rows * TILE_DRAW_CELL_H,
+        };
         AdjustWindowRectEx(&rc, (DWORD)GetWindowLongPtrA(hwnd, GWL_STYLE), FALSE, (DWORD)GetWindowLongPtrA(hwnd, GWL_EXSTYLE));
         int winW = rc.right - rc.left;
         int winH = rc.bottom - rc.top;
@@ -84,11 +93,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
         if (state && state->tiles) {
-            RECT cr;
-            GetClientRect(hwnd, &cr);
-            int cw = cr.right - cr.left;
-            int ch = cr.bottom - cr.top;
-            tiles_draw_stretched(hdc, state->tiles, 0, 0, cw, ch);
+            tiles_draw_bounds_grid(hdc, state->tiles, TILE_GRID_COLS, TILE_DRAW_CELL_W, TILE_DRAW_CELL_H);
         }
         EndPaint(hwnd, &ps);
         return 0;
