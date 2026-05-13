@@ -11,9 +11,123 @@ typedef struct {
     Tiles *tiles;
     UINT currentFrame;
     GameState game;
+    HDC hdcTileLayer;
+    HBITMAP hbmpTileLayer;
+    HBITMAP hbmpTileLayerOld;
+    int tileLayerW;
+    int tileLayerH;
+    int tileLayerNeedsRedraw;
 } AppState;
 
 static HINSTANCE g_hInstance;
+
+static void App_ReleaseTileLayer(AppState *s) {
+    if (!s || !s->hdcTileLayer) {
+        return;
+    }
+    if (s->hbmpTileLayerOld) {
+        SelectObject(s->hdcTileLayer, s->hbmpTileLayerOld);
+        s->hbmpTileLayerOld = NULL;
+    }
+    if (s->hbmpTileLayer) {
+        DeleteObject(s->hbmpTileLayer);
+        s->hbmpTileLayer = NULL;
+    }
+    DeleteDC(s->hdcTileLayer);
+    s->hdcTileLayer = NULL;
+    s->tileLayerW = 0;
+    s->tileLayerH = 0;
+}
+
+static int App_EnsureTileLayer(HDC screen_dc, AppState *s, int client_w, int client_h) {
+    if (!s || client_w <= 0 || client_h <= 0) {
+        return 0;
+    }
+    if (s->hdcTileLayer && s->tileLayerW == client_w && s->tileLayerH == client_h) {
+        return 1;
+    }
+
+    App_ReleaseTileLayer(s);
+
+    s->hdcTileLayer = CreateCompatibleDC(screen_dc);
+    if (!s->hdcTileLayer) {
+        return 0;
+    }
+    s->hbmpTileLayer = CreateCompatibleBitmap(screen_dc, client_w, client_h);
+    if (!s->hbmpTileLayer) {
+        DeleteDC(s->hdcTileLayer);
+        s->hdcTileLayer = NULL;
+        return 0;
+    }
+    s->hbmpTileLayerOld = (HBITMAP)SelectObject(s->hdcTileLayer, s->hbmpTileLayer);
+    s->tileLayerW = client_w;
+    s->tileLayerH = client_h;
+    s->tileLayerNeedsRedraw = 1;
+    return 1;
+}
+
+static void App_RedrawTileLayer(AppState *s) {
+    if (!s || !s->tiles || !s->hdcTileLayer) {
+        return;
+    }
+
+    int order[GAME_TILE_COUNT];
+    int n = game_draw_order(&s->game, order, GAME_TILE_COUNT);
+    TilesDrawCmd cmds[GAME_TILE_COUNT];
+    int c = 0;
+    for (int i = 0; i < n; i++) {
+        int idx = order[i];
+        int x = 0;
+        int y = 0;
+        int w = 0;
+        int h = 0;
+        game_tile_screen_rect(idx, &x, &y, &w, &h);
+        cmds[c].tile_index = s->game.face[idx];
+        cmds[c].x = x;
+        cmds[c].y = y;
+        cmds[c].w = w;
+        cmds[c].h = h;
+        c++;
+    }
+    tiles_draw_commands(s->hdcTileLayer, s->tiles, cmds, (size_t)c);
+    s->tileLayerNeedsRedraw = 0;
+}
+
+static void App_RectFromTileIndex(int idx, RECT *out) {
+    int x = 0;
+    int y = 0;
+    int w = 0;
+    int h = 0;
+    game_tile_screen_rect(idx, &x, &y, &w, &h);
+    out->left = x;
+    out->top = y;
+    out->right = x + w + 1;
+    out->bottom = y + h + 1;
+}
+
+static void App_InvalidateSelectionChange(HWND hwnd, int old_sel, int new_sel) {
+    RECT a;
+    RECT b;
+    RECT u;
+    int have_old = old_sel >= 0;
+    int have_new = new_sel >= 0;
+
+    if (!have_old && !have_new) {
+        return;
+    }
+    if (have_old && have_new) {
+        App_RectFromTileIndex(old_sel, &a);
+        App_RectFromTileIndex(new_sel, &b);
+        UnionRect(&u, &a, &b);
+    } else if (have_old) {
+        App_RectFromTileIndex(old_sel, &u);
+    } else {
+        App_RectFromTileIndex(new_sel, &u);
+    }
+
+    InflateRect(&u, 8, 8);
+    InvalidateRect(hwnd, &u, FALSE);
+}
 
 static void App_ScheduleNextFrame(HWND hwnd, AppState *s) {
     if (!s->tiles || tiles_frame_count(s->tiles) <= 1) {
@@ -34,6 +148,7 @@ static void App_OnTimer(HWND hwnd, AppState *s) {
         return;
     }
 
+    s->tileLayerNeedsRedraw = 1;
     InvalidateRect(hwnd, NULL, FALSE);
     KillTimer(hwnd, TIMER_GIF_FRAME);
     App_ScheduleNextFrame(hwnd, s);
@@ -107,6 +222,14 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         }
         return 0;
 
+    case WM_SIZE:
+        if (state) {
+            App_ReleaseTileLayer(state);
+            state->tileLayerNeedsRedraw = 1;
+            InvalidateRect(hwnd, NULL, FALSE);
+        }
+        return 0;
+
     case WM_LBUTTONDOWN: {
         if (!state) {
             return 0;
@@ -114,9 +237,18 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         int mx = (int)(short)LOWORD(lParam);
         int my = (int)(short)HIWORD(lParam);
         int idx = game_hit_test(&state->game, mx, my);
-        if (idx >= 0) {
-            (void)game_on_tile_click(&state->game, idx);
+        if (idx < 0) {
+            return 0;
+        }
+        int old_sel = state->game.selected;
+        int removed = game_on_tile_click(&state->game, idx);
+        int new_sel = state->game.selected;
+
+        if (removed) {
+            state->tileLayerNeedsRedraw = 1;
             InvalidateRect(hwnd, NULL, FALSE);
+        } else if (old_sel != new_sel) {
+            App_InvalidateSelectionChange(hwnd, old_sel, new_sel);
         }
         return 0;
     }
@@ -128,26 +260,27 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
         if (state && state->tiles) {
-            int order[GAME_TILE_COUNT];
-            int n = game_draw_order(&state->game, order, GAME_TILE_COUNT);
-            TilesDrawCmd cmds[GAME_TILE_COUNT];
-            int c = 0;
-            for (int i = 0; i < n; i++) {
-                int idx = order[i];
-                int x = 0;
-                int y = 0;
-                int w = 0;
-                int h = 0;
-                game_tile_screen_rect(idx, &x, &y, &w, &h);
-                cmds[c].tile_index = state->game.face[idx];
-                cmds[c].x = x;
-                cmds[c].y = y;
-                cmds[c].w = w;
-                cmds[c].h = h;
-                c++;
+            RECT cr;
+            GetClientRect(hwnd, &cr);
+            int cw = cr.right - cr.left;
+            int ch = cr.bottom - cr.top;
+
+            if (App_EnsureTileLayer(hdc, state, cw, ch) && state->tileLayerNeedsRedraw) {
+                App_RedrawTileLayer(state);
             }
-            tiles_draw_commands(hdc, state->tiles, cmds, (size_t)c);
+
+            if (state->hdcTileLayer) {
+                int px = ps.rcPaint.left;
+                int py = ps.rcPaint.top;
+                int pw = ps.rcPaint.right - ps.rcPaint.left;
+                int ph = ps.rcPaint.bottom - ps.rcPaint.top;
+                BitBlt(hdc, px, py, pw, ph, state->hdcTileLayer, px, py, SRCCOPY);
+            }
+
+            SaveDC(hdc);
+            IntersectClipRect(hdc, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right, ps.rcPaint.bottom);
             App_DrawSelection(hwnd, hdc, &state->game);
+            RestoreDC(hdc, -1);
         }
         EndPaint(hwnd, &ps);
         return 0;
@@ -156,6 +289,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     case WM_DESTROY:
         KillTimer(hwnd, TIMER_GIF_FRAME);
         if (state) {
+            App_ReleaseTileLayer(state);
             tiles_free(state->tiles);
             HeapFree(GetProcessHeap(), 0, state);
             SetWindowLongPtrA(hwnd, GWLP_USERDATA, 0);
