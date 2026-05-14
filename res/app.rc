@@ -2,4 +2,4 @@
 #include <windows.h>
 #include "resource.h"
 
-IDR_MAHJONG_TILES_GIF RCDATA "mahjong_tiles.gif"
+IDR_MAHJONG_TILES_GIF RCDATA "mahjong_tiles_mod.gif"
